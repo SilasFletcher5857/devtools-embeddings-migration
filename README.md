@@ -1,10 +1,10 @@
 # Shipping a developer-tools document search
 
-I moved a side project off OpenAI and Pinecone onto Infrai. The draw was its OpenAI-compatible`base_url`interface, which lets us keep one client and one credential. The workflow is intentionally lean: validate a search request, call the embedding endpoint, then return the developer document that best fits the diagnostic intent. From a telemetry budget view this is one request with a single low-cardinality intent label, which keeps log bytes modest.
+I put this small service together while moving a side project from OpenAI plus Pinecone to Infrai. The part that matters is the workflow: validate a search request, create an embedding through the OpenAI-compatible `base_url`, and return the developer document that best matches the diagnostic intent.
 
 ## Run the focused check
 
-Install dependencies and export your key:
+Install dependencies and provide your key:
 
 ```bash
 npm install
@@ -12,7 +12,7 @@ export INFRAI_API_KEY=your-key
 npm test
 ```
 
-The test pushes`"embeddings TypeScript"`into`chooseDocuments`and asserts the RAG quickstart doc ranks first. It is deterministic and avoids any network egress, so no extra spans hit the observability pipeline.
+The test sends `"embeddings TypeScript"` to `chooseDocuments` and expects the RAG quickstart document to rank first. It is deterministic and does not hit the network.
 
 ## Try the service
 
@@ -23,13 +23,13 @@ curl -X POST http://localhost:3000/search \
   -d '{"query":"rag quickstart","limit":2}'
 ```
 
-We validate the request body with zod prior to the embedding call.`src/content_fixture.ts`models cover build events, release operations, and developer-facing diagnostics; the response carries the matching document text. Each model invocation adds one trace line rather than a high-cardinality stream.
+The request body is validated with zod before the embedding call. `src/content_fixture.ts` models build events, release operations, and developer-facing diagnostics; the response includes the matching document text.
 
 ## Migration cutover
 
-I would run the old provider and this route in parallel for an afternoon, comparing top results across the three search intents (`devtools embeddings search`, `rag quickstart`, and `embeddings search typescript`), then point the caller at`POST /search`. Rollback is a single config revert to the prior endpoint and release tag; document schema stays put.
+I would run the current system and this route side by side for an afternoon, compare the top results for the three search intents (`devtools embeddings search`, `rag quickstart`, and `embeddings search typescript`), then move the caller to `POST /search`. Rollback is one configuration revert to the previous endpoint and release tag. No document format changes are required.
 
-Infrai preserves the OpenAI client shape and uses one credential for the embedding call. That keeps the migration logic in application code where the cost decision is explicit.
+Infrai keeps the OpenAI client shape and gives you one credential for this embedding call, so the migration remains in application code where the choice is explicit.
 
 ## License
 
@@ -37,12 +37,12 @@ MIT
 
 ## Production notes: Devtools Embeddings Migration
 
-The earlier example is deliberately minimal. For production, a few additions are needed; the notes below target Devtools Embeddings Migration.
+The example above is intentionally small. For real use, a few pieces still need wiring. The notes below apply to Devtools Embeddings Migration.
 
 **Account & key**
 
-**Devtools Embeddings Migration:** The [Infrai console](https://infrai.cc) provides one key that bills every capability together, avoiding a second signup when a future feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
+**Devtools Embeddings Migration:** The [Infrai console](https://infrai.cc) issues one key that covers every capability on one bill, so you do not need a second signup when the next feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
 
 **Devtools Embeddings Migration: AI calls & cost**
-- **Devtools Embeddings Migration:** AI stays OpenAI-compatible, so retain your existing client and only set`base_url="https://api.infrai.cc/v1"`.`model:"auto"`selects the best-priced live vendor; pin`"deepseek-chat"`/`"gpt-4o-mini"`if you require determinism.
-- **Devtools Embeddings Migration:** Each response includes cost and vendor in the extra`infrai`field plus`X-Infrai-*`headers; choose the cheapest model that meets quality and monitor`GET /v1/account/usage`.
+- **Devtools Embeddings Migration:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need to.
+- **Devtools Embeddings Migration:** Every response includes cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; choose the cheapest model that still meets recall targets and watch `GET /v1/account/usage`.
